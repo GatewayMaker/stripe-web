@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KRYX CHKR • Stripe Engine</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.0">
+</head>
+<body>
+
+  <!-- BACKGROUND OVERLAY PARTICLES -->
+  <div class="cyber-bg-glow"></div>
+
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <a href="/" class="brand-wrapper">
+        <div class="brand-icon-box">
+          <i class="fa-solid fa-bolt-lightning"></i>
+        </div>
+        <div class="brand-text">
+          <h1>KRYX<span>CHKR</span></h1>
+          <span class="brand-badge"><i class="fa-solid fa-microchip"></i> STRIPE ENGINE</span>
+        </div>
+      </a>
+
+      <!-- TELEMETRY & NAV BUTTONS -->
+      <div class="nav-links">
+        <!-- LIVE ACTIVE USERS -->
+        <div class="telemetry-pill" id="teleOnlinePill" title="Aktif Kullanıcı">
+          <span class="pulsing-dot-green"></span>
+          <span class="tele-label" data-i18n="online_lbl">ONLINE:</span>
+          <span class="tele-val" id="onlineUserCount">{{ active_users|default(1) }}</span>
+          <span class="tele-sub" data-i18n="online_sub">USERS</span>
+        </div>
+
+        <!-- LANGUAGE TOGGLE BUTTON -->
+        <button id="langToggleBtn" class="btn-lang" title="Dil Seçimi / Switch Language">
+          <i class="fa-solid fa-globe"></i>
+          <span id="currentLangLabel">TR</span>
+        </button>
+
+        <!-- TELEGRAM LINKS -->
+        <a href="https://t.me/KryxCheck" target="_blank" rel="noopener noreferrer" class="nav-btn nav-btn-tg">
+          <i class="fa-brands fa-telegram"></i> t.me/KryxCheck
+        </a>
+
+        <a href="https://t.me/sweartx" target="_blank" rel="noopener noreferrer" class="nav-btn nav-btn-dev">
+          <i class="fa-solid fa-code"></i> @sweartx
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="main-wrapper">
+
+    <!-- STATS CARDS -->
+    <section class="stats-grid">
+      <div class="stat-card stat-total">
+        <div class="stat-top">
+          <div class="stat-icon"><i class="fa-solid fa-layer-group"></i></div>
+          <span class="stat-tag" data-i18n="stat_processed">İŞLENDİ</span>
+        </div>
+        <div class="stat-info">
+          <span class="stat-num" id="statTotal">0</span>
+          <span class="stat-label" data-i18n="stat_total">TOPLAM KART</span>
+        </div>
+      </div>
+
+      <div class="stat-card stat-approved">
+        <div class="stat-top">
+          <div class="stat-icon"><i class="fa-solid fa-circle-check"></i></div>
+          <span class="stat-tag tag-approved" id="approvedRate">0.0%</span>
+        </div>
+        <div class="stat-info">
+          <span class="stat-num" id="statApproved">0</span>
+          <span class="stat-label" data-i18n="stat_approved">APPROVED</span>
+        </div>
+      </div>
+
+      <div class="stat-card stat-3ds">
+        <div class="stat-top">
+          <div class="stat-icon"><i class="fa-solid fa-shield-halved"></i></div>
+          <span class="stat-tag tag-3ds" id="threeDsRate">0.0%</span>
+        </div>
+        <div class="stat-info">
+          <span class="stat-num" id="stat3ds">0</span>
+          <span class="stat-label" data-i18n="stat_3ds">3D SECURE</span>
+        </div>
+      </div>
+
+      <div class="stat-card stat-declined">
+        <div class="stat-top">
+          <div class="stat-icon"><i class="fa-solid fa-circle-xmark"></i></div>
+          <span class="stat-tag tag-declined" id="declinedRate">0.0%</span>
+        </div>
+        <div class="stat-info">
+          <span class="stat-num" id="statDeclined">0</span>
+          <span class="stat-label" data-i18n="stat_declined">DECLINED</span>
+        </div>
+      </div>
+
+      <div class="stat-card stat-error">
+        <div class="stat-top">
+          <div class="stat-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+          <span class="stat-tag tag-error" data-i18n="stat_fail">FAIL</span>
+        </div>
+        <div class="stat-info">
+          <span class="stat-num" id="statError">0</span>
+          <span class="stat-label" data-i18n="stat_error">ERROR</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROGRESS & CONTROLS -->
+    <section class="progress-container">
+      <div class="progress-header">
+        <div class="progress-left">
+          <span class="pulse-indicator" id="pulseIndicator"></span>
+          <span class="progress-status" id="progressStatusText" data-i18n="status_idle">SİSTEM HAZIR</span>
+        </div>
+        <div class="progress-right">
+          <span class="progress-percentage" id="progressPercent">0%</span>
+        </div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressBar"></div>
+      </div>
+    </section>
+
+    <!-- CONTENT GRID (2 COLUMNS: INPUT & RESULTS) -->
+    <div class="content-grid">
+
+      <!-- LEFT COLUMN: INPUT PANEL -->
+      <div class="cyber-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i class="fa-solid fa-credit-card"></i>
+            <span data-i18n="panel_input">KART GİRİŞİ</span>
+          </div>
+          <div class="quick-actions">
+            <button class="btn-mini" id="pasteInputBtn" title="Panodan Yapıştır">
+              <i class="fa-solid fa-paste"></i> <span data-i18n="btn_paste">Yapıştır</span>
+            </button>
+            <button class="btn-mini" id="cleanDupesBtn" title="Tekrarlananları Temizle">
+              <i class="fa-solid fa-filter"></i> <span data-i18n="btn_filter">Tekilleri Ayıkla</span>
+            </button>
+            <button class="btn-mini" id="clearInputBtn" title="Temizle">
+              <i class="fa-solid fa-trash-can"></i> <span data-i18n="btn_clear">Temizle</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="textarea-container">
+          <textarea id="cardsInput" class="cyber-textarea" spellcheck="false" placeholder="4140497098472757|09|27|057
+4532015887410023|11|28|123
+5425231234567890|05|26|999
+
+Format: CARD|MM|YY|CVV"></textarea>
+          
+          <div class="textarea-footer">
+            <div class="card-counter">
+              <span data-i18n="loaded_label">YÜKLENEN:</span> <span id="loadedCount">0</span>
+            </div>
+            <div class="file-upload-wrap">
+              <input type="file" id="fileImport" accept=".txt" style="display: none;">
+              <button class="btn-mini btn-upload" onclick="document.getElementById('fileImport').click()">
+                <i class="fa-solid fa-file-arrow-up"></i> <span data-i18n="btn_upload">.TXT YÜKLE</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CONTROLS -->
+        <div class="controls-wrap">
+          <button id="startBtn" class="cyber-btn btn-start">
+            <i class="fa-solid fa-play"></i> <span data-i18n="btn_start">BAŞLAT</span>
+          </button>
+          <button id="stopBtn" class="cyber-btn btn-stop" disabled>
+            <i class="fa-solid fa-stop"></i> <span data-i18n="btn_stop">DURDUR</span>
+          </button>
+          <button id="resetBtn" class="cyber-btn btn-reset">
+            <i class="fa-solid fa-rotate-left"></i> <span data-i18n="btn_reset">SIFIRLA</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: RESULTS PANEL -->
+      <div class="cyber-panel results-panel-wrap">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i class="fa-solid fa-terminal"></i>
+            <span data-i18n="panel_results">CANLI SONUÇLAR</span>
+          </div>
+          <div class="results-tabs">
+            <button class="tab-btn active" data-filter="ALL"><span data-i18n="tab_all">Tümü</span> (<span id="tabCountAll">0</span>)</button>
+            <button class="tab-btn tab-approved" data-filter="APPROVED">Approved (<span id="tabCountApproved">0</span>)</button>
+            <button class="tab-btn tab-3ds" data-filter="3D_SECURE">3DS (<span id="tabCount3ds">0</span>)</button>
+            <button class="tab-btn tab-declined" data-filter="DECLINED">Declined (<span id="tabCountDeclined">0</span>)</button>
+          </div>
+        </div>
+
+        <!-- RESULTS ACTIONS -->
+        <div class="results-actions">
+          <button class="btn-mini btn-action-copy-app" id="copyApprovedBtn">
+            <i class="fa-solid fa-check-double"></i> <span data-i18n="btn_copy_app">Approved Kopyala</span>
+          </button>
+          <button class="btn-mini btn-action-copy-3ds" id="copy3dsBtn">
+            <i class="fa-solid fa-shield"></i> <span data-i18n="btn_copy_3ds">3DS Kopyala</span>
+          </button>
+          <button class="btn-mini" id="downloadTxtBtn">
+            <i class="fa-solid fa-file-export"></i> <span data-i18n="btn_download">Rapor (.TXT)</span>
+          </button>
+          <button class="btn-mini btn-action-clear" id="clearResultsBtn">
+            <i class="fa-solid fa-broom"></i> <span data-i18n="btn_clear_res">Temizle</span>
+          </button>
+        </div>
+
+        <!-- RESULTS SCROLLBOX -->
+        <div class="results-scrollbox" id="resultsBox">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon-wrap">
+              <i class="fa-solid fa-satellite-dish"></i>
+            </div>
+            <h4 data-i18n="empty_title">KONSOL HAZIR</h4>
+            <p data-i18n="empty_desc">Sonuçlar burada anlık akacaktır.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="cyber-footer">
+      <div class="footer-links">
+        <a href="https://t.me/KryxCheck" target="_blank" rel="noopener noreferrer" class="footer-link">
+          <i class="fa-brands fa-telegram"></i> Telegram: t.me/KryxCheck
+        </a>
+        <span>•</span>
+        <a href="https://t.me/sweartx" target="_blank" rel="noopener noreferrer" class="footer-link">
+          <i class="fa-solid fa-code"></i> Developer: @sweartx
+        </a>
+      </div>
+      <p>KRYX CHKR • Stripe Checkout Engine</p>
+    </footer>
+
+  </main>
+
+  <!-- TOAST NOTIFICATION -->
+  <div class="toast" id="toastBox">
+    <i class="fa-solid fa-circle-check" style="color: var(--neon-yellow);"></i>
+    <span id="toastMsg">İşlem Tamam</span>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}?v=3.0"></script>
+</body>
+</html>
