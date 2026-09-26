@@ -9,6 +9,7 @@ import time
 import hashlib
 import threading
 from typing import Optional
+import requests
 from flask import Flask, request, jsonify, render_template
 from checker import check_card, session_manager, DEFAULT_PK, DEFAULT_CS, DEVELOPER, TELEGRAM_CHANNEL
 
@@ -21,6 +22,31 @@ app.json.ensure_ascii = False
 ACTIVE_CLIENTS = {}
 CLIENTS_LOCK = threading.Lock()
 START_TIME = time.time()
+
+# -------------------------------------------------------------
+# KEEP-ALIVE SELF PINGER (Prevents Render Free Tier from Sleeping)
+# -------------------------------------------------------------
+SELF_PING_INTERVAL = 60  # Pings every 1 minute
+DETECTED_APP_URL = os.environ.get('RENDER_EXTERNAL_URL') or os.environ.get('APP_URL') or ''
+
+def keep_alive_worker():
+    """Background worker that pings own /health endpoint every 60s so Render stays awake 24/7."""
+    time.sleep(15)  # Wait for server to bind
+    while True:
+        target_url = DETECTED_APP_URL or os.environ.get('RENDER_EXTERNAL_URL') or os.environ.get('APP_URL')
+        if target_url:
+            ping_url = target_url.rstrip('/') + '/health'
+            try:
+                requests.get(ping_url, timeout=10)
+            except Exception:
+                pass
+        time.sleep(SELF_PING_INTERVAL)
+
+def start_keep_alive():
+    t = threading.Thread(target=keep_alive_worker, daemon=True, name="render_keep_alive")
+    t.start()
+
+start_keep_alive()
 
 
 def register_client_activity(client_id: Optional[str] = None):
@@ -61,6 +87,16 @@ def get_real_active_count() -> int:
         return max(count, 1)
 
 
+@app.before_request
+def auto_detect_app_host():
+    """Captures the live app host URL from incoming requests for self-ping keep-alive."""
+    global DETECTED_APP_URL
+    if not DETECTED_APP_URL and request.host_url:
+        host = request.host_url.rstrip('/')
+        if 'localhost' not in host and '127.0.0.1' not in host:
+            DETECTED_APP_URL = host
+
+
 @app.route('/')
 def index():
     cid = request.args.get('client_id', '')
@@ -80,11 +116,14 @@ def health():
         "status": "ok",
         "service": "KRYX CHKR",
         "dynamic_session": True,
+        "keep_alive_active": True,
+        "ping_target": DETECTED_APP_URL or os.environ.get('RENDER_EXTERNAL_URL') or "Auto-detected on Render",
         "active_users": get_real_active_count(),
         "uptime": f"{round(time.time() - START_TIME, 1)}s",
         "developer": DEVELOPER,
         "channel": TELEGRAM_CHANNEL
     })
+
 
 
 @app.route('/api/ping', methods=['GET', 'POST'])
