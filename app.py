@@ -7,6 +7,7 @@ Telegram Channel: t.me/KryxCheck
 import os
 import time
 import hashlib
+import sqlite3
 import threading
 from typing import Optional
 import requests
@@ -18,10 +19,24 @@ app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
 app.json.ensure_ascii = False
 
-# Genuine active users tracker (in-memory, thread-safe, no fake baselines)
-ACTIVE_CLIENTS = {}
-CLIENTS_LOCK = threading.Lock()
+# Multi-Worker & Multi-Thread Synchronized Active Users Store
+DB_PATH = os.path.join(os.path.dirname(__file__), 'active_users.db')
 START_TIME = time.time()
+
+def init_db():
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS active_clients (
+                    client_id TEXT PRIMARY KEY,
+                    last_seen REAL
+                )
+            """)
+    except Exception:
+        pass
+
+init_db()
 
 # -------------------------------------------------------------
 # KEEP-ALIVE SELF PINGER (Prevents Render Free Tier from Sleeping)
@@ -50,41 +65,46 @@ start_keep_alive()
 
 
 def register_client_activity(client_id: Optional[str] = None):
-    """Registers heartbeat for a real client tab/session."""
+    """Registers heartbeat for a real client tab/session (synced across all Gunicorn workers)."""
     if not client_id or not client_id.strip():
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1').split(',')[0].strip()
         ua = request.headers.get('User-Agent', '')
         client_id = hashlib.md5(f"{client_ip}:{ua}".encode()).hexdigest()[:16]
 
     now = time.time()
-    with CLIENTS_LOCK:
-        ACTIVE_CLIENTS[client_id] = now
-        # Prune inactive connections older than 25 seconds
-        cutoff = now - 25.0
-        stale = [cid for cid, ts in ACTIVE_CLIENTS.items() if ts < cutoff]
-        for cid in stale:
-            del ACTIVE_CLIENTS[cid]
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("INSERT OR REPLACE INTO active_clients (client_id, last_seen) VALUES (?, ?)", (client_id, now))
+            conn.execute("DELETE FROM active_clients WHERE last_seen < ?", (now - 25.0,))
+    except Exception:
+        pass
 
 
 def remove_client(client_id: Optional[str]):
-    """Removes a client immediately upon tab close/disconnect."""
+    """Removes a client immediately upon tab close/disconnect across all workers."""
     if not client_id:
         return
-    with CLIENTS_LOCK:
-        if client_id in ACTIVE_CLIENTS:
-            del ACTIVE_CLIENTS[client_id]
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM active_clients WHERE client_id = ?", (client_id,))
+    except Exception:
+        pass
 
 
 def get_real_active_count() -> int:
-    """Returns actual real concurrent active user count without fake baselines."""
+    """Returns actual real concurrent active user count synced across all workers."""
     now = time.time()
-    with CLIENTS_LOCK:
-        cutoff = now - 25.0
-        stale = [cid for cid, ts in ACTIVE_CLIENTS.items() if ts < cutoff]
-        for cid in stale:
-            del ACTIVE_CLIENTS[cid]
-        count = len(ACTIVE_CLIENTS)
-        return max(count, 1)
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM active_clients WHERE last_seen < ?", (now - 25.0,))
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM active_clients")
+            row = cur.fetchone()
+            count = row[0] if row else 1
+            return max(count, 1)
+    except Exception:
+        return 1
+
 
 
 @app.before_request
